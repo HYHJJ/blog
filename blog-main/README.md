@@ -49,7 +49,7 @@ articleSchema.pre('validate', function(next) {
 module.exports = mongoose.model('article', articleSchema)
 ```
 
-3. 各页面的ejs文件的编写
+2. 各页面的ejs文件的编写
 ```
 <!DOCTYPE html>
 <html lang="en">
@@ -146,7 +146,7 @@ module.exports = mongoose.model('article', articleSchema)
 </html>
 ```
 
-4. 文章的增删改查功能
+3. 文章的增删改查功能
 ```
 //索引
 router.get('/', requireLogin, async (req, res) => {
