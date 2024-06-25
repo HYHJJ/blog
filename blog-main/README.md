@@ -20,82 +20,133 @@ graph LR
 ```
 
 ### 代码具体讲解：
-1. 用户管理：
-注册与登录功能
+1.数据库模型
+
 ```
-//注册
-router.get('/register', (req, res) => {
-  res.render('register');
+const mongoose = require('mongoose');
+const marked = require('marked')
+const user = require('./user');//关联文章与用户
+
+const articleSchema = new mongoose.Schema({
+    title: String,
+    description: String,
+    content: String,//原始md文件格式
+    html: String,//展示html文件格式
+    createdAt: {type: Date, default: Date.now},
+    author: {
+        type: mongoose.Schema.Types.ObjectId,//文章作者，通过ObjectId引用用户集合
+        ref: 'user'
+    }
+});
+
+articleSchema.pre('validate', function(next) {
+  if (this.content) {
+    this.html = marked(this.content)
+  }
+  next()//将文章转化为html并储存在html字段中
 })
 
-router.post('/register', async (req, res) => {
-    try{
-        let oneuser = await user.findOne({ username: req.body.username });
-        if(oneuser)
-        {
-            return res.render('login', { message: 'The username already exists' });//如果用户已存在，返回错误信息并返回登录界面
-        }
-        one = new user({ username: req.body.username, password: req.body.password });
-        await one.save();
-        res.render('login', { message: 'User registered' });//弹出注册成功的信息并返回登录界面
-    }
-    catch (error) {
-        res.render('login', { message: 'error' });
-    }
-});
-
-//登录
-router.post('/login', async (req, res) => {
-    try{
-        var username = req.body.username;
-        var password = req.body.password;
-        var oneuser = await user.findOne({ username: username });
-        if (!oneuser) {
-            return res.render('login', { message: 'user does not exist' });//如果用户不存在，返回错误信息并返回登录界面
-        }
-        const match = await bcrypt.compare(password, oneuser.password);//比较明文密码和hash后的密码是否匹配
-        if (!match) {
-            return res.render('login', { message: 'password error' });//密码错误，返回错误信息并返回登录界面
-        }
-        req.session.oneuser = oneuser;//创建一个session储存用户登录信息
-        res.redirect('/');
-    }
-    catch (error) {
-        res.render('login', { message: 'error' });
-    }
-});
+module.exports = mongoose.model('article', articleSchema)
 ```
 
-用户密码加密
+3. 各页面的ejs文件的编写
 ```
-userSchema.pre('save', async function(next) {
-        const salt = await bcrypt.genSalt(10);//生成一个复杂度为10的盐值
-        const hash = await bcrypt.hash(this.password, salt);//将盐值与密码使用hash算法处理来进行加密
-        this.password = hash;//加密后数据储存到数据库中
-    next();
-});
-```
-
-验证用户是否登录
-```
-//验证
-app.use(session({
-  secret: 'secret-key',
-  resave: false,
-  saveUninitialized: true,
-  cookie: { maxAge: 6000000 },
-}));
-```
-```
-const requireLogin = (req, res, next) => {
-  if (req.session.oneuser) {
-    next();
-  } else {
-    res.render('login', { message: null })//若检测到用户未登录，返回登录界面
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Blog</title>
+  <link rel="stylesheet" type="text/css" href="/css/bootstrap.min.css" />
+  <style>
+  .left {float: left;}
+  .right {float: right;}
+  .clear {clear: both;}//设置浮动样式
+  body{
+    background: url("/image/background.png") no-repeat fixed center;//设置背景图片
+    color: white;
   }
-};
+  .card-body{
+    background-color: rgba(0, 0, 0, 0.6);
+  }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="mt-4 left">Articles</h1>
+    <h1 class="mt-4 right"><%= name %></h1>
+    <div class="clear">
+    <hr/>
+    <a href="/new" class="btn btn-success">New Article</a>
+    </div>
+    <% articles.forEach(article => { %>//检索并渲染文章
+    <div class="card mt-4 bg-transparent">
+        <div class="card-body">
+        <h2><%= article.title %></h2>//标题
+            <div class="text-muted mb-2">
+               <%= article.createdAt.toLocaleDateString() %>//日期
+            </div>
+        <p><%= article.description %></p>//文章信息和简介
+        <a href="/display/<%= article._id %>" class="btn btn-primary">Read More</a>//展开内容链接
+        <a href="/edit/<%= article._id %>" class="btn btn-info">Edit</a>//编辑链接
+        <form action="/<%= article._id %>?_method=DELETE" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-danger">Delete</button>//删除链接
+        </form>
+        </div>
+    </div>
+    <% }) %>
+  </div>
+</body>
+</html>
 ```
-2. 文章的增删改查功能
+
+```
+<html>
+<head>
+  <title>Blog Edit</title>
+  <link rel="stylesheet" type="text/css" href="/css/bootstrap.min.css" />
+  <style>
+  body{
+    background: url("/image/background.png") no-repeat fixed center;//背景图片设置
+    color: white;
+  }
+  .card-body{
+    background-color: rgba(0, 0, 0, 0.6);
+  }
+  </style>
+</head>
+
+<body>
+<div class="container">
+<h1>Edit Article</h1>
+<form action="/<%= article._id %>?_method=PUT" method="POST">//使用post方法更新内容
+<div class="card mt-4 bg-transparent">
+    <div class="card-body">//使用Bootstrap卡片用于组织表单内容
+    <div class="form-group">
+    <label for="title">Title</label>
+    <input required value="<%= article.title %>" type="text" name="title" id="title" class="form-control bg-transparent text-light">//标题输入框
+    </div>
+
+    <div class="form-group">
+    <label for="description">Description</label>
+    <textarea name="description" id="description" class="form-control bg-transparent text-light"><%= article.description %></textarea>//文章简介输入框
+    </div>
+
+    <div class="form-group">
+    <label for="content">Content</label>
+    <textarea name="content" id="content" class="form-control bg-transparent text-light"><%= article.content %></textarea>//文章内容输入框
+    </div>
+
+    <a href="/" class="btn btn-secondary">Cancel</a>//取消
+    <button type="submit" class="btn btn-primary">Save</button>//保存
+    </div>
+</div>    
+</form>
+</div>
+</body>
+
+</html>
+```
+
+4. 文章的增删改查功能
 ```
 //索引
 router.get('/', requireLogin, async (req, res) => {
@@ -137,57 +188,9 @@ router.put('/:id', requireLogin, async (req, res) => {
     res.redirect(`/display/${req.params.id}`)
 })
 ```
-3. 各页面的ejs文件的编写
-以索引界面为例
-```
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <title>Blog</title>
-  <link rel="stylesheet" type="text/css" href="/css/bootstrap.min.css" />
-  <style>
-  .left {float: left;}
-  .right {float: right;}
-  .clear {clear: both;}
-  body{
-    background: url("/image/background.png") no-repeat fixed center;
-    color: white;
-  }
-  .card-body{
-    background-color: rgba(0, 0, 0, 0.6);
-  }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1 class="mt-4 left">Articles</h1>
-    <h1 class="mt-4 right"><%= name %></h1>
-    <div class="clear">
-    <hr/>
-    <a href="/new" class="btn btn-success">New Article</a>
-    </div>
-    <% articles.forEach(article => { %>
-    <div class="card mt-4 bg-transparent">
-        <div class="card-body">
-        <h2><%= article.title %></h2>
-            <div class="text-muted mb-2">
-               <%= article.createdAt.toLocaleDateString() %>
-            </div>
-        <p><%= article.description %></p>
-        <a href="/display/<%= article._id %>" class="btn btn-primary">Read More</a>
-        <a href="/edit/<%= article._id %>" class="btn btn-info">Edit</a>
-        <form action="/<%= article._id %>?_method=DELETE" method="POST" class="d-inline">
-            <button type="submit" class="btn btn-danger">Delete</button>
-        </form>
-        </div>
-    </div>
-    <% }) %>
-  </div>
-</body>
-</html>
-```
+
 ## 项目总结
-该项目基本实现了一个简易博客系统的功能，通过该项目，我基本掌握了基础的HTML，CSS，JavaScript语法，学会了如何通过html搭建网页、用css美化网页，提高了自身的知识与技术能力。
+该项目基本实现了一个简易博客系统的功能，通过完成这个项目，我学会了基本的JavaScript和html语法，深入理解了网页前后端的运行逻辑。对用户登录注册系统的理解有待提高。
 
 ## 工作量统计表
 | 统计 | 基础功能 | 新增功能1 | 新增功能2 | 新增功能3 | 新增功能4 | 新增功能5 |
